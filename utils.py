@@ -1,12 +1,32 @@
-import pandas as pd
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import h5py
-import os
+import numpy as np
+import pandas as pd
+import os 
 
-# Constants for fixed input lengths
+# Dataset that loads precomputed tensors
+class InteractionDataset(torch.utils.data.Dataset):
+    def __init__(self, couples_df, phage_id_to_path, bacterium_id_to_path):
+        self.couples = couples_df.reset_index(drop=True)
+        self.phage_path = phage_id_to_path
+        self.bact_path = bacterium_id_to_path
+    def __len__(self):
+        return len(self.couples)
+    def __getitem__(self, idx):
+        row = self.couples.iloc[idx]
+        phage_id = row['phage_id']
+        bacterium_id = row['bacterium_id']
+        label = torch.tensor([row['interaction_type']], dtype=torch.float32)
+        # Load precomputed one-hot arrays from disk and convert to float32 tensor
+        phage_arr = np.load(self.phage_path[phage_id])
+        bact_arr = np.load(self.bact_path[bacterium_id])
+        phage_tensor = torch.from_numpy(phage_arr.astype(np.float32))
+        bacterium_tensor = torch.from_numpy(bact_arr.astype(np.float32))
+        return bacterium_tensor, phage_tensor, label
+    
+    
+    # Constants for fixed input lengths
 BACTERIUM_THRESHOLD = 7000000  # padded length for bacterial sequences
 PHAGE_THRESHOLD = 200000       # padded length for phage sequences
 
@@ -113,79 +133,6 @@ def precompute_and_cache_sequences(phages_df: pd.DataFrame, bacteria_df: pd.Data
             np.save(out_path, onehot_array)
     return phage_id_to_path, bacterium_id_to_path
 
-class BacteriaBranch(nn.Module):
-    """CNN branch for bacterial DNA sequence (channels-first input)."""
-    def __init__(self):
-        super(BacteriaBranch, self).__init__()
-        self.conv1 = nn.Conv1d(4, 64, kernel_size=30, stride=10, bias=True)
-        self.relu1 = nn.ReLU()
-        self.pool1 = nn.MaxPool1d(kernel_size=15, stride=5)
-        self.conv2 = nn.Conv1d(64, 32, kernel_size=25, stride=10, bias=True)
-        self.relu2 = nn.ReLU()
-        self.pool2 = nn.MaxPool1d(kernel_size=10, stride=5)
-        self.conv3 = nn.Conv1d(32, 32, kernel_size=10, stride=5, bias=True)
-        self.relu3 = nn.ReLU()
-        self.pool3 = nn.MaxPool1d(kernel_size=2, stride=2)
-    def forward(self, x):
-        # x shape: (batch, 4, BACTERIUM_THRESHOLD)
-        x = self.relu1(self.conv1(x))
-        x = self.pool1(x)
-        x = self.relu2(self.conv2(x))
-        x = self.pool2(x)
-        x = self.relu3(self.conv3(x))
-        x = self.pool3(x)
-        print(f"BacterialBranch shape after conv3 {x.shape}")
-        # Permute to (batch, length, channels) to mimic Keras channels-last flatten, then flatten
-        x = x.permute(0, 2, 1).contiguous()
-        x = x.view(x.size(0), -1)
-        print(f"BacterialBranch shape after reshaping {x.shape}")        
-        return x
-
-class PhageBranch(nn.Module):
-    """CNN branch for phage DNA sequence (channels-first input)."""
-    def __init__(self):
-        super(PhageBranch, self).__init__()
-        self.conv1 = nn.Conv1d(4, 64, kernel_size=30, stride=10, bias=True)
-        self.relu1 = nn.ReLU()
-        self.pool1 = nn.MaxPool1d(kernel_size=15, stride=5)
-        self.conv2 = nn.Conv1d(64, 32, kernel_size=25, stride=10, bias=True)
-        self.relu2 = nn.ReLU()
-        self.pool2 = nn.MaxPool1d(kernel_size=2, stride=2)
-    def forward(self, x):
-        # x shape: (batch, 4, PHAGE_THRESHOLD)
-        x = self.relu1(self.conv1(x))
-        x = self.pool1(x)
-        x = self.relu2(self.conv2(x))
-        x = self.pool2(x)
-        print(f"PhageBranch shape after conv2 {x.shape}")
-        x = x.permute(0, 2, 1).contiguous()
-        x = x.view(x.size(0), -1)
-        print(f"PhageBranch shape after reshaping {x.shape}")        
-        return x
-
-class PerphectInteractionModel(nn.Module):
-    """Dual-input CNN for phage-bacterium interaction prediction."""
-    def __init__(self):
-        super(PerphectInteractionModel, self).__init__()
-        self.bacteria_branch = BacteriaBranch()
-        self.phage_branch = PhageBranch()
-        # Flattened feature lengths: 8928 (bacteria) + 6368 (phage) = 15296
-        self.fc1 = nn.Linear(15296, 100, bias=True)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.1)
-        self.fc2 = nn.Linear(100, 1, bias=True)
-    def forward(self, bacteria_input, phage_input):
-        # Pass each input through its branch
-        bact_features = self.bacteria_branch(bacteria_input)
-        phage_features = self.phage_branch(phage_input)
-        # Concatenate features (batch, 15296)
-        combined = torch.cat([bact_features, phage_features], dim=1)
-        # Fully-connected layers and sigmoid output
-        x = self.relu(self.fc1(combined))
-        x = self.dropout(x)
-        out = torch.sigmoid(self.fc2(x))
-        return out
-
 def load_keras_weights(pytorch_model: nn.Module, keras_h5_path: str):
     """
     Load weights from a Keras .h5 model file into the PyTorch model.
@@ -218,22 +165,45 @@ def load_keras_weights(pytorch_model: nn.Module, keras_h5_path: str):
     return pytorch_model
 
 
-# Dataset that loads precomputed tensors
-class InteractionDataset(torch.utils.data.Dataset):
-    def __init__(self, couples_df, phage_id_to_path, bacterium_id_to_path):
-        self.couples = couples_df.reset_index(drop=True)
-        self.phage_path = phage_id_to_path
-        self.bact_path = bacterium_id_to_path
-    def __len__(self):
-        return len(self.couples)
-    def __getitem__(self, idx):
-        row = self.couples.iloc[idx]
-        phage_id = row['phage_id']
-        bacterium_id = row['bacterium_id']
-        label = torch.tensor([row['interaction_type']], dtype=torch.float32)
-        # Load precomputed one-hot arrays from disk and convert to float32 tensor
-        phage_arr = np.load(self.phage_path[phage_id])
-        bact_arr = np.load(self.bact_path[bacterium_id])
-        phage_tensor = torch.from_numpy(phage_arr.astype(np.float32))
-        bacterium_tensor = torch.from_numpy(bact_arr.astype(np.float32))
-        return bacterium_tensor, phage_tensor, label
+def combine_attributions(attr_tensor, method='sum', input_length=None):
+
+    if attr_tensor.dim() != 3:
+        raise ValueError("Attribution tensor must have 3 dimensions (batch, channels, length)")
+    
+    batch, channels, length = attr_tensor.shape
+    
+    # Case 1: GuidedGradCam attribution with 4 channels (one per nucleotide)
+    if channels == 4:
+        attr = attr_tensor.squeeze(0)  # now shape is [4, L]
+        if method == 'sum':
+            combined = attr.sum(dim=0)
+        elif method == 'max':
+            combined, _ = attr.max(dim=0)
+        else:
+            raise ValueError("Unsupported method. Choose 'sum' or 'max'.")
+        # Normalize to range [0, 1]
+        combined = (combined - combined.min()) / (combined.max() - combined.min())
+        return combined.cpu().numpy()
+    
+    # Case 2: LayerGradCam attribution with 1 channel (coarse feature map)
+    elif channels == 1:
+        if input_length is None:
+            raise ValueError("For a single-channel attribution (LayerGradCam), you must provide input_length.")
+        # Convert input_length to int and wrap it in a tuple
+        target_size = (int(input_length),)
+        # Upsample from current length (N) to input_length using nearest-neighbor interpolation
+        upsampled = F.interpolate(attr_tensor, size=target_size, mode="nearest")
+        combined = upsampled.squeeze(0).squeeze(0)
+        # Normalize to range [0, 1]
+        combined = (combined - combined.min()) / (combined.max() - combined.min())
+        return combined.cpu().numpy()
+    
+    else:
+        raise ValueError("Unexpected channel dimension. Expected 1 or 4 channels.")
+    
+    
+# Define a function to write this to a FASTA file
+def write_fasta(seq, filename, seq_id="my_sequence"):
+    with open(filename, "w") as f:
+        f.write(f">{seq_id}\n")  # fasta header
+        f.write(seq + "\n")       # actual sequence
