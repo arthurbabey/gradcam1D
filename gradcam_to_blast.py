@@ -18,7 +18,7 @@ from utils import InteractionDataset, precompute_and_cache_sequences, tensor_to_
 from utils import combine_attributions, BACTERIUM_THRESHOLD, PHAGE_THRESHOLD
 from visualisation import find_top_k_important_windows
 
-def load_model_and_data():
+def load_model_and_data(public=True):
     """Load the pre-trained model and dataset (with cached one-hot sequences)."""
     # Load pre-trained model weights
     model = PerphectInteractionModel()
@@ -31,7 +31,7 @@ def load_model_and_data():
     model.eval()  # set model to evaluation mode
 
     # Load datasets (CSV files)
-    data_dir = "./data/public_data_set"
+    data_dir = "./data/public_data_set" if public else "./data/private_data_set"
     try:
         bacteria_df = pd.read_csv(os.path.join(data_dir, "bacteria_df.csv"))
         phages_df   = pd.read_csv(os.path.join(data_dir, "phages_df.csv"))
@@ -188,6 +188,22 @@ def fetch_entrez_description(accession):
         logging.warning(f"Entrez fetch failed for {accession}: {e}")
     return None
 
+
+# PUBLIC DATASET
+
+# True Positive index: 0, sequence_length = 53124, bacterium_sequence_length = 6988208
+#False Positive index: 1994, sequence_length = 54867, bacterium_sequence_length = 6988208
+#True Negative index: 1993, sequence_length = 41526, bacterium_sequence_length = 6988208
+#False Negative index: 91, sequence_length = 46732, bacterium_sequence_length = 6988208
+
+# PRIVATE DATASET
+
+#True Positive index: 0, sequence_length = 18227, bacterium_sequence_length = 2872769
+#False Positive index: 13, phage_sequence_length = 43114, bacterium_sequence_length = 2692583
+#True Negative index: 10, phage_sequence_length = 18227, bacterium_sequence_length = 2692583
+#False Negative index: 7, phage_sequence_length = 41708, bacterium_sequence_length = 2774913
+
+
 def main():
     parser = argparse.ArgumentParser(description="Grad-CAM attribution and BLAST analysis for phage-bacterium CNN.")
     parser.add_argument("--idx", type=int, required=True, help="Index of the interaction sample to analyze.")
@@ -195,14 +211,18 @@ def main():
     parser.add_argument("--branch", type=str, choices=["bacteria", "phage"], required=True, help="Which branch to analyze (bacteria or phage).")
     parser.add_argument("--num_regions", type=int, default=3, help="Number of top regions to extract.")
     parser.add_argument("--window_size", type=int, default=500, help="Window size (in bp) for each region.")
-    parser.add_argument("--name", type=str, default="run", help="Name for this analysis (used in output folder naming).")
     parser.add_argument("--gradcam_type", type=str, choices=["layercam", "guided"], default="layercam", help="Type of Grad-CAM to perform: 'layercam' or 'guided'.")
+    parser.add_argument("--public", action="store_true", help="Use public dataset (default is private).")
+    parser.add_argument("sequence_length", type=int, help="Length of the sequence to analyze to cut for padding.")
     parser.add_argument("--dry_run", action="store_true", help="If set, skip BLAST and Entrez steps (for debugging).")
     args = parser.parse_args()
 
+    # name 
+    name = args.branch + "_" + str(args.idx) + "_" + str(args.public)
+    
     # Set up output directory (include timestamp for uniqueness)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = f"results_{args.name}_{timestamp}"
+    out_dir = f"results_{name}_{timestamp}"
     os.makedirs(out_dir, exist_ok=True)
 
     # Configure logging to file and console
@@ -216,8 +236,8 @@ def main():
     logging.info(f"Parameters: idx={args.idx}, target_layer='{args.target_layer}', branch={args.branch}, "
                  f"num_regions={args.num_regions}, window_size={args.window_size}, gradcam_type={args.gradcam_type}")
 
-    # Load model and dataset
-    model, dataset = load_model_and_data()
+    # Load model and dataset public
+    model, dataset = load_model_and_data(public=True)
     logging.info("Model and data loaded successfully.")
 
     # Get the specified sample's input tensors and sequences
@@ -253,6 +273,10 @@ def main():
         sys.exit(1)
     logging.info(f"Computed {args.gradcam_type} attributions for layer '{args.target_layer}'.")
 
+    # Cut attribution and sequence to drop 0 padding with sequence length
+    attribution_scores = attribution_scores[:args.sequence_length]
+    target_seq = target_seq[:args.sequence_length]
+    
     # Identify top K important regions in the selected sequence
     top_windows = find_top_k_important_windows(target_seq, attribution_scores, k=args.num_regions, window_size=args.window_size)
     if not top_windows:
