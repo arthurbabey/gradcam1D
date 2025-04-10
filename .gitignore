@@ -1,4 +1,7 @@
 data/
+results/
+phage_genomes/
+
 .history/
 
 .ipynb_checkpoints
