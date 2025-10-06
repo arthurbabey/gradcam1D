@@ -1,0 +1,51 @@
+project:
+  name: demo
+
+paths:
+  data_dir: data/public_data_set
+  model_checkpoint: data/saved_model/model_v1.pth
+  cache_dir: "{data_dir}/cached_tensors"
+  results_dir: results_pipeline
+
+datasets:
+  bacteria: bacteria_df.csv
+  phages: phages_df.csv
+  couples: couples_df.csv
+
+samples:
+  - name: phage_0
+    idx: 0
+    branch: phage
+  - name: bacteria_0
+    idx: 0
+    branch: bacteria
+  - name: phage_1994
+    idx: 1994
+    branch: phage
+
+attribution:
+  method: guided
+  target_layers:
+    phage: conv2
+    bacteria: conv3
+  num_regions: 3
+  window_size: 500
+
+thresholds:
+  phage: 200000
+  bacteria: 7000000
+
+blast:
+  enabled: true
+  mode: remote
+  database: nt
+
+report:
+  enabled: true
+
+logging:
+  level: INFO
+
+parity:
+  sample_indices: [0, 1, 2]
+  reference: parity_reference.json

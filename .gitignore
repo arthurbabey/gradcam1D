@@ -1,8 +1,13 @@
 data/
 results/
+results_pipeline/
 phage_genomes/
 
 .history/
+.snakemake/
+workflow/.snakemake/
 
 .ipynb_checkpoints
 *.ipynb
+__pycache__/
+.DS_Store

@@ -1,0 +1,113 @@
+configfile: "config.yaml"
+
+import os
+
+CONFIG_PATH = workflow.configfile
+RESULTS_DIR = config["paths"]["results_dir"]
+SAMPLES = [sample["name"] for sample in config["samples"]]
+
+
+rule all:
+    input:
+        f"{RESULTS_DIR}/cache/cache.done",
+        f"{RESULTS_DIR}/predictions/predictions.csv",
+        expand(f"{RESULTS_DIR}/attributions/{{sample}}.npy", sample=SAMPLES),
+        expand(f"{RESULTS_DIR}/attributions/{{sample}}.json", sample=SAMPLES),
+        expand(f"{RESULTS_DIR}/regions/{{sample}}.tsv", sample=SAMPLES),
+        expand(f"{RESULTS_DIR}/fasta/{{sample}}.fasta", sample=SAMPLES),
+        expand(f"{RESULTS_DIR}/blast/{{sample}}.tsv", sample=SAMPLES),
+        expand(f"{RESULTS_DIR}/annotations/{{sample}}.tsv", sample=SAMPLES),
+        expand(f"{RESULTS_DIR}/bed/{{sample}}.bed", sample=SAMPLES),
+        f"{RESULTS_DIR}/report/summary.md",
+        f"{RESULTS_DIR}/tests/parity_reference.json"
+
+
+rule cache:
+    output:
+        f"{RESULTS_DIR}/cache/cache.done"
+    shell:
+        "python3 cli.py cache --config {CONFIG_PATH}"
+
+
+rule predict:
+    input:
+        rules.cache.output
+    output:
+        f"{RESULTS_DIR}/predictions/predictions.csv"
+    shell:
+        "python3 cli.py predict --config {CONFIG_PATH}"
+
+
+rule explain:
+    input:
+        rules.predict.output
+    output:
+        attr_file=f"{RESULTS_DIR}/attributions/{{sample}}.npy",
+        meta_file=f"{RESULTS_DIR}/attributions/{{sample}}.json"
+    params:
+        sample="{sample}"
+    shell:
+        "python3 cli.py explain --config {CONFIG_PATH} --sample {wildcards.sample}"
+
+
+rule regions:
+    input:
+        attr_file=f"{RESULTS_DIR}/attributions/{{sample}}.npy"
+    output:
+        tsv=f"{RESULTS_DIR}/regions/{{sample}}.tsv",
+        fasta=f"{RESULTS_DIR}/fasta/{{sample}}.fasta"
+    params:
+        sample="{sample}"
+    shell:
+        "python3 cli.py regions --config {CONFIG_PATH} --sample {wildcards.sample}"
+
+
+rule blast:
+    input:
+        fasta=f"{RESULTS_DIR}/fasta/{{sample}}.fasta"
+    output:
+        f"{RESULTS_DIR}/blast/{{sample}}.tsv"
+    params:
+        sample="{sample}"
+    shell:
+        "python3 cli.py blast --config {CONFIG_PATH} --sample {wildcards.sample}"
+
+
+rule annotate:
+    input:
+        blast=f"{RESULTS_DIR}/blast/{{sample}}.tsv"
+    output:
+        f"{RESULTS_DIR}/annotations/{{sample}}.tsv"
+    params:
+        sample="{sample}"
+    shell:
+        "python3 cli.py annotate --config {CONFIG_PATH} --sample {wildcards.sample}"
+
+
+rule bed:
+    input:
+        blast=f"{RESULTS_DIR}/blast/{{sample}}.tsv"
+    output:
+        f"{RESULTS_DIR}/bed/{{sample}}.bed"
+    params:
+        sample="{sample}"
+    shell:
+        "python3 cli.py bed --config {CONFIG_PATH} --sample {wildcards.sample}"
+
+
+rule report:
+    input:
+        expand(f"{RESULTS_DIR}/annotations/{{sample}}.tsv", sample=SAMPLES)
+    output:
+        f"{RESULTS_DIR}/report/summary.md"
+    shell:
+        "python3 cli.py report --config {CONFIG_PATH}"
+
+
+rule parity:
+    input:
+        rules.cache.output
+    output:
+        f"{RESULTS_DIR}/tests/parity_reference.json"
+    shell:
+        "python3 cli.py test --config {CONFIG_PATH}"

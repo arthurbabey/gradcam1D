@@ -236,8 +236,8 @@ def main():
     logging.info(f"Parameters: idx={args.idx}, target_layer='{args.target_layer}', branch={args.branch}, "
                  f"num_regions={args.num_regions}, window_size={args.window_size}, gradcam_type={args.gradcam_type}")
 
-    # Load model and dataset public
-    model, dataset = load_model_and_data(public=True)
+    # Load model and dataset according to flag
+    model, dataset = load_model_and_data(public=args.public)
     logging.info("Model and data loaded successfully.")
 
     # Get the specified sample's input tensors and sequences
@@ -351,7 +351,7 @@ def main():
                 if identity is not None:
                     ident_str = f"{identity:.1f}%"
                 else:
-                    ident_str = f"{pident}%"
+                    ident_str = "NA"
                 if description:
                     logging.info(f"  {qid}: {accession} – {description} (identity {ident_str}, e-value {evalue})")
                 else:

@@ -1,70 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def find_top_k_important_windows(sequence, 
-                                 combined_attribution, 
-                                 k=5, 
-                                 window_size=500):
-    """
-    Identify top k non-overlapping windows of fixed size based on mean Grad-CAM attribution.
-    
-    Parameters:
-    -----------
-    sequence : str
-        The full DNA sequence (length N).
-    combined_attribution : 1D np.array
-        Grad-CAM attributions of length N.
-    k : int
-        Number of windows to retrieve.
-    window_size : int
-        Size of each window (bp).
-    
-    Returns:
-    --------
-    top_windows : list of tuples
-        Each tuple contains (start_index, end_index, mean_attribution).
-    """
-    N = len(sequence)
-    
-    # Safety check
-    if len(combined_attribution) != N:
-        raise ValueError("Sequence and attribution must have the same length.")
-    if window_size > N:
-        raise ValueError("window_size cannot exceed the length of the sequence.")
-
-    # 1. Compute mean attribution for each window using convolution
-    # sums[i] will be sum of attributions in the window [i, i+window_size-1]
-    # means will be sums / window_size
-    sums = np.convolve(combined_attribution, np.ones(window_size, dtype=np.float32), mode='valid')
-    means = sums / window_size  # shape: (N - window_size + 1,)
-
-    # 2. Find indices that give the highest mean attribution
-    # Sort window start indices by descending mean
-    sorted_indices = np.argsort(means)[::-1]
-
-    # 3. Pick top k non-overlapping windows
-    selected_indices = []
-    top_windows = []
-    for idx in sorted_indices:
-        # window range is [idx, idx + window_size)
-        # check overlap with already selected windows
-        overlap = False
-        for (start_sel, end_sel, _) in top_windows:
-            if not (idx + window_size <= start_sel or idx >= end_sel):
-                # They overlap
-                overlap = True
-                break
-
-        if not overlap:
-            window_mean = means[idx]
-            top_windows.append((idx, idx + window_size, window_mean))
-
-        if len(top_windows) == k:
-            break
-
-    # Sort the final windows by their start index
-    top_windows.sort(key=lambda x: x[0])
-    return top_windows
+from src.regions import find_top_k_important_windows  # noqa: F401
 
 
 def plot_top_windows(sequence, combined_attribution, top_windows):
