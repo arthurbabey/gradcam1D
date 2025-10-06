@@ -1,146 +1,144 @@
-Roadmap and TODOs
-=================
+# Roadmap & TODOs — Phage–Bacteria XAI
 
-Purpose
-- This file organizes next steps into four tracks you can assign to students.
-- Each track lists goals, concrete tasks, and deliverables. Adapt as needed.
+**Goal.** A reproducible pipeline that explains a 2-branch 1D-CNN (bacteria + phage), extracts key DNA regions, annotates them (BLAST/GenBank), and reports biological insights.
 
-Context Artifacts
-- Model: `src/modeling.py` (two-branch 1D CNN, parity + Keras loader)
-- Data utils: `src/data.py` (encoding, caching, dataset, validation helpers) + `utils.py` re-exports for notebooks
-- Pipeline orchestration & CLI: `src/pipeline.py`, `cli.py`
-- Attribution helpers: `src/attribution.py`, `src/regions.py`
-- BLAST utilities: `src/blast_tools.py`
-- Reporting: `src/reporting.py`
-- Guided notebook: `notebooks/pipeline_walkthrough.ipynb`
+**Background**: We have a dataset of bacterial and phage DNA sequences (one-hot encoded) with labels
+indicating if the pair interacts (yes/no). The model is a two-branch 1D CNN that processes
+a bacterium genome (padded to ~7,000,000 bp) and a phage genome (padded to ~200,000 bp) and then
+concatenates their feature representations to predict interaction. We want to use XAI techniques (GradCAM, Integrated Gradients, etc.) to find which parts of each sequence contribute most to the
+prediction. By extracting those important regions and aligning them via BLAST to known sequences, we
+hope to discover genes or motifs (e.g. phage tail fibers, bacterial surface receptors) that drive the
+interaction.
 
-Track A — Engineering and Reproducibility
-- Goals
-  - One-command, reproducible pipeline to go from CSVs → cached tensors → predictions → attributions → top regions → BLAST → feature summaries → report.
-  - Containerized environment with BLAST+, Captum, Biopython.
+**Artifacts.**  
+`model.py` (2-branch CNN) · `utils.py` (IUPAC one-hot, caching) · `pipeline_walkthrough.ipynb`  
+New modules to add: `src/xai.py`, `src/peaks.py`, `src/blast.py`, `src/report.py`, `cli.py`
 
-- Tasks
-  - Pipeline
-    - [x] Add a `config.yaml` describing dataset paths, thresholds, attribution config, BLAST options, output dir.
-    - [x] Implement a Snakemake workflow (or Makefile) with rules: `cache`, `predict`, `attribution`, `top_regions`, `blast`, `genebank`, `bed`, `report`.
-    - [ ] Support both public and private datasets via config profiles.
-    - [x] Use stable, human-readable run names (e.g., `results/{branch}/{idx}`) instead of timestamps.
-  - CLI unification
-    - [x] Create a single entrypoint `cli.py` with subcommands: `cache`, `predict`, `explain`, `blast`, `annotate`, `bed`, `report` that call into existing functions.
-    - [x] Refactor shared utilities into a `src/` package (keep function names; do not change behavior).
-  - Environment
-    - [x] Create `environment.yml` (conda) with exact versions (torch, captum, biopython, pandas, snakemake).
-    - [ ] Create `Dockerfile` installing BLAST+ and the environment; add `docker-compose.yml` with bind mounts for `data/` and `results/`.
-  - Reliability
-    - [x] Add logging to files under each run directory and a top-level `logs/` folder.
-    - [x] Add schema checks for CSVs (required columns and types) and cache integrity checks for `.npy` shapes.
-    - [x] Add a small parity check to verify loaded `model_v1.pth` predicts identically across machines for a handful of samples.
-  - Documentation
-    - [x] Expand `README.md` with: install, run, pipeline diagram, expected inputs/outputs, and troubleshooting.
-    - [x] Add `CONTRIBUTING.md` with coding style, how to add new steps.
+---
 
-- Deliverables
-  - `workflow/Snakefile` + `config.yaml`, `environment.yml`, `Dockerfile`.
-  - Unified `cli.py` executing end-to-end runs.
+## Track A — Engineering & Reproducibility
 
-- Acceptance
-  - `snakemake --cores 4` runs from raw CSVs to a finished report directory without manual edits.
-  - `docker run …` executes the same and passes basic checks.
+**Goals**: Streamline the entire analysis into a reproducible, one-command pipeline, and provide a
+containerized environment to ensure consistent results across different systems. By the end of this
+track, one should be able to go from raw CSV data to a final report with a single command. All
+dependencies (PyTorch, Captum, Biopython, BLAST+, etc.) should be encapsulated in an environment,
+and the workflow should be easy to run on any machine (or Docker) with minimal setup.
 
-Track B — XAI Methods and Comparisons
-- Goals
-  - Provide multiple attribution methods for the dual-input model and a unified API to compute/import them.
-  - Compare methods qualitatively and quantitatively (stability, runtime, agreement).
+**Tasks.**
+- **Pipeline.** `config.yaml` (paths, seeds, methods, BLAST); Snakemake rules: `cache → predict → explain → peaks → blast → annotate → bed → report`. Stable run names.
+- **CLI.** `cli.py` subcommands: `cache/predict/explain/blast/annotate/bed/report`.
+- **Env.** `environment.yml` (torch, captum, biopython, blast+, snakemake); `Dockerfile` with BLAST+; mount `data/` & `results/`.
 
-- Tasks
-  - Implement methods (Captum)
-    - [ ] Saliency and GuidedBackprop on inputs (per branch).
-    - [ ] Integrated Gradients (IG) with robust baselines; try `LayerIntegratedGradients` for deeper layers.
-    - [ ] DeepLift and DeepLiftShap on inputs.
-    - [ ] InputXGradient; Occlusion with suitable sliding window for long sequences.
-    - [ ] NoiseTunnel variants (SmoothGrad / VarGrad) for stability.
-  - Multi-input handling
-    - [ ] Standardize outputs to 1D per-base arrays after channel-combine (reuse `combine_attributions`).
-    - [ ] Ensure methods return separate arrays for `bacteria` and `phage` branches; align lengths to true sequence lengths (not padded).
-  - Evaluation
-    - [ ] Add a small benchmark notebook to compare runtime and memory per method on a fixed sample set.
-    - [ ] Compute rank correlations and overlap of top regions across methods.
-    - [ ] Add reproducibility check (repeat runs with fixed seeds and NoiseTunnel parameters).
-  - UX
-    - [ ] Extend `pipeline_walkthrough.ipynb` to toggle method via a single variable and plot overlays.
+**Deliverables.** `workflow/Snakefile`, `config.yaml`, `environment.yml`, `Dockerfile`, `cli.py`.
 
-- Deliverables
-  - `src/xai.py` exposing `explain(sample, branch, method, target_layer, params) → 1D attribution`.
-  - Comparison notebook with plots and summary table.
+Running snakemake --cores 4 (or an equivalent one-command execution via CLI) on a fresh
+machine takes raw input (CSV sequences) and produces a complete results directory without
+any manual intervention or errors. This includes all intermediate files (cached data,
+predictions, attribution scores, region files, BLAST results, annotations) and a final report. For
+example, a user should be able to clone the repo, adjust the config with input file paths, and
+execute one command to get results. 
 
-- Acceptance
-  - At least five methods implemented and validated on both branches.
-  - A summary document recommending two default methods and parameter presets.
+---
 
-Track C — Signal Processing and Region Extraction
-- Goals
-  - Improve region extraction beyond a fixed-size sliding window by adapting to signal characteristics.
+## Track B — XAI Methods & Comparison
 
-- Tasks
-  - Peak detection and segmentation
-    - [ ] Implement dynamic peak calling (e.g., prominence-based) on the normalized attribution signal.
-    - [ ] Merge adjacent peaks if closer than a minimum gap; enforce minimum width.
-    - [ ] Multi-scale windows: evaluate several window sizes; keep windows that are stable across scales.
-  - Thresholding strategies
-    - [ ] Absolute (e.g., > 0.9), percentile-based (top 1–5%), and relative-to-local-baseline thresholds.
-    - [ ] Control number of regions per sample (top-K with diversity constraint).
-  - Post-processing
-    - [ ] Expand/contract regions to nearest local minima to capture full motif context.
-    - [ ] Deduplicate overlapping regions; track attribution mean, max, and area-under-importance as features.
-  - Validation
-    - [ ] Sanity plots of attribution vs. selected regions; export IGV tracks (BEDGRAPH/BED) with scores.
-    - [ ] Compare region sets between methods from Track B; compute Jaccard overlaps.
+**Goals**: Extend the explainability of the model by implementing multiple attribution methods, and build
+a unified interface to compute and compare these attributions. We want to go beyond Grad-CAM and
+have methods like Saliency maps, Integrated Gradients, PositionalSHAP, etc.
+The goal is to determine which methods are most reliable and informative for our application and possibly recommend a default method for routine
+analysis.
 
-- Deliverables
-  - `src/peaks.py` with functions for peak calling, merging, multi-scale selection.
-  - Notebook demonstrating improvements vs. fixed windows on representative samples.
+**Tasks.**
+- **Methods** Saliency/GuidedBP · IG · GradCAM · Positional SHAP.
+- **Outputs.** Standardize to per-base 1D arrays; mask padding; return `{bacteria, phage}`.
+- **Eval.** Notebook: runtime/memory; rank correlations & top-K overlaps; stability with fixed seeds.
+- **Code.** In `notebooks.ipynb`, use different `method=` to have plots.
 
-- Acceptance
-  - Regions are fewer, more precise, and stable across methods and runs; visual inspection looks biologically plausible.
+**Deliverables.** `src/xai.py` (`explain(sample, branch, method, **kw) → np.ndarray`), comparison notebook.
 
-Track D — Biological Queries and Reporting
-- Goals
-  - Turn BLAST hits into interpretable biology with richer annotations and clear summaries.
+- A new module (e.g., src/xai.py ) that contains implementations for the attribution methods
+and a unified interface to invoke them. The code should be well-documented, explaining how
+each method works at a high level (with references if helpful).
+-A comparison report or notebook (Jupyter Notebook) that benchmarks and visualizes the
+methods. Expect to include charts of attribution scores and a summary table of metrics (e.g., a
+table showing pairwise Spearman correlations between methods, time per sample, etc.).
+-An update to the pipeline or CLI to allow choosing an attribution method (for example, via config
+or CLI argument). 
 
-- Tasks
-  - BLAST improvements
-    - [ ] Support both remote BLAST and local BLAST+ with a pre-downloaded db, controlled by config.
-    - [ ] Add hit filtering by identity, coverage, e-value; handle multi-hit regions and strand.
-  - Annotation
-    - [ ] Extend `blast_to_genebank.py` to extract gene name, product, protein_id, and neighboring features within ±N bp.
-    - [ ] Map to functional vocabularies (e.g., gene ontology where possible, basic keyword tagging).
-    - [ ] Summarize recurring genes/functional categories across samples and methods.
-  - Reporting
-    - [ ] Generate per-sample HTML/PDF reports with: attribution plot, selected regions, BLAST top hits, feature table.
-    - [ ] Aggregate cohort report: tables of most frequent accessions/features, example IGV snapshots, and method comparisons.
-    - [ ] Provide export formats: TSV/CSV and BED/BEDGRAPH for genome viewers.
+---
 
-- Deliverables
-  - `report/` templates (Jinja2 or nbconvert) and a CLI `report` command to render.
-  - Enhanced `blast_features_summary.tsv` with standardized columns and metadata.
+## Track C — Signal Processing & Region Extraction
 
-- Acceptance
-  - A single command produces both per-sample and aggregate reports with clear tables/figures suitable for slides.
+**Goals**: Enhance how we extract important genomic regions from the raw attribution scores. Initially, a
+simple fixed-size sliding window approach was used (e.g., take the top scoring window of fixed length).
+This track aims to develop a more adaptive, signal processing-informed approach to identify peaks of
+importance in the attribution signals. By doing so, we hope to capture meaningful biological regions
+(like genes or regulatory elements) of varying lengths, rather than arbitrary fixed-size windows. The end
+result should be a procedure that, given an attribution score array for a sequence, returns a set of
+significant regions (with start/end positions on the genome) that likely correspond to biologically
+relevant features, with reduced false positives and more consistency.
 
-Cross-Cutting and Cleanup
-- [ ] Archive legacy notebooks to `notebooks/legacy/` (keep `pipeline_walkthrough.ipynb` as the main guide).
-- [ ] Remove `.DS_Store` and ensure `__pycache__/` is ignored (already in `.gitignore`).
-- [ ] Add minimal unit tests for: one-hot encode/decode, caching, dataset shapes, attribution combination, peak caller.
-- [ ] Add small sample dataset for CI (short sequences) to validate pipeline steps without large genomes.
+**Tasks.**
 
-Suggested Order of Work (Milestones)
-1) A1 Pipeline skeleton (config + Snakemake + env) and stable run naming.
-2) B1 Implement 2–3 XAI methods with unified API; hook into pipeline.
-3) C1 Replace fixed-window selection with peak calling; compare on examples.
-4) D1 Enrich annotations and basic per-sample report.
-5) A2 Dockerize; add local BLAST option; finalize docs and quickstart.
+- **Peaks.** : Implement a peak-finding algorithm on the attribution signal for
+each sequence. Instead of pre-defining window size, identify local maxima (peaks) in the 1D
+attribution score array (Adaptative peaks). You can use functions like SciPy’s signal.find_peaks which supports finding peaks by prominence and
+other criteria.
+- **Selection.** How to choose the thresholds : (percentile (top 1%) / absolute top 10 regions / local-baseline (higher than neighboor regions)).
+- **Post.** Expand/contract to local minima; deduplicate overlaps; compute region metrics (mean/max/area).
+- **Viz.** Sanity plots; Show attribution and signal for regions, visualisation of the signals.
 
-Notes for Students
-- Use `pipeline_walkthrough.ipynb` to understand each step on a single example.
-- For batch jobs, prefer the unified CLI or Snakemake once implemented.
-- Keep runs deterministic (set seeds) when comparing XAI methods; document parameters in outputs.
+**Deliverables.** `src/peaks.py`, example short demo notebook with visualisation.
+
+A module/file src/peaks.py (or integrated into attribution.py ) containing functions for
+peak detection and region extraction
+Example output files for a few samples: e.g., results/sample1/regions.bed , results/
+sample1/attribution.bedgraph , which demonstrate the format and content of the region
+extraction.
+A Jupyter notebook showcasing the improvements of this dynamic approach. This notebook should include plots of attribution signals with the new regions
+overlaid.
+
+The new region extraction method should output a reasonable number of regions per sample
+(for instance, not hundreds of tiny fragments, and not just one giant region unless truly only one
+area is important). "Reasonable" might be on the order of a few regions for an interacting pair,
+depending on model behavior. This likely means your parameters are tuned so that noise doesn't
+produce peaks and real signals do.
+
+---
+
+## Track D — Biology, Annotation & Reporting
+
+**Goals.** Turn regions into interpretable biology; clear per-sample + aggregate reports.
+
+**Tasks.**
+- **BLAST.** Remote or local BLAST+ (config); filters by %id, coverage, e-value; strand handling; multi-hit support.
+- **Annotate.** Fetch GenBank; extract gene/product/protein_id ± neighbor context; simple keyword tagging (e.g., tail fiber, integrase, CRISPR).
+- **Report.** Per-sample HTML/PDF with attribution plots, regions, BLAST table; cohort summary (recurring genes/functions).
+
+**Deliverables.** `src/blast.py`, `src/report.py`, `report/`, `blast_features_summary.tsv`.
+
+**Acceptance.** One command yields per-sample reports + an aggregate summary with sensible annotations.
+
+Running the pipeline end-to-end produces a complete set of reports without manual
+intervention. Each sample with an interaction has its own report file, and there is a global
+summary report. 
+The content of the reports is accurate and comprehensible. Key points:
+
+- Gene names and functions in the reports should be real and correctly match the BLAST hits (no
+placeholder or missing info for the majority of cases).
+- The per-sample report should clearly pinpoint which regions were important and what they likely
+correspond to. A reader (with some biology background) should be able to follow the logic from
+model -> important region -> BLAST hit -> gene function.
+-The aggregate report should highlight meaningful trends (if the pipeline found nothing but
+random hits, that might indicate an issue with attribution or region selection; ideally, patterns
+emerge such as common phage tail genes or common bacterial receptor genes).
+
+---
+
+## Milestones (suggested order)
+1) **A** Pipeline skeleton + config + env.  
+2) **B** Implement IG/PositionalSHAP/ via `src/xai.py`; wire into pipeline.  
+3) **C** Adaptive peaks replace fixed windows; quick visual validation.  
+4) **D** Basic BLAST+annotation and per-sample report.  
+
+---

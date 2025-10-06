@@ -25,22 +25,22 @@ Setup
 Using the CLI
 ```
 # Step-by-step (functions can be run individually)
-python3 cli.py cache --device mps
-python3 cli.py predict
-python3 cli.py explain --sample phage_0
-python3 cli.py regions --sample phage_0
-python3 cli.py blast --sample phage_0
-python3 cli.py annotate --sample phage_0
-python3 cli.py bed --sample phage_0
-python3 cli.py report
-python3 cli.py test
+python cli.py cache --device mps
+python cli.py predict
+python cli.py explain --sample phage_0
+python cli.py regions --sample phage_0
+python cli.py blast --sample phage_0
+python cli.py annotate --sample phage_0
+python cli.py bed --sample phage_0
+python cli.py report
+python cli.py test
 
 # Or run everything for all samples listed in config.yaml (override device if desired)
-python3 cli.py run --device auto
+python cli.py run --device auto
 
 # You can also target an inline sample without editing config.yaml using the pattern
 # <branch>_<idx>, e.g. explain the phage branch at couples_df index 42:
-python3 cli.py explain --sample phage_42
+python cli.py explain --sample phage_42
 ```
 Outputs are written to `results_pipeline/` (deterministic naming per sample).
 
@@ -72,7 +72,7 @@ Validation & Logging
 - CSV schemas are checked before use (required columns).
 - Cached tensors are verified for shape/dtype before downstream work.
 - Each CLI command and Snakemake rule writes a dedicated log file under `results_pipeline/logs/`.
-- `python3 cli.py test` performs a parity check (stores/compares predictions for known samples).
+- `python cli.py test` performs a parity check (stores/compares predictions for known samples).
 
 Notebooks & Legacy Tools
 - Use `notebooks/pipeline_walkthrough.ipynb` to understand the pipeline on a single sample.
