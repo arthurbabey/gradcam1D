@@ -7,6 +7,9 @@ paths:
   cache_dir: "{data_dir}/cached_tensors"
   results_dir: results_pipeline
 
+hardware:
+  device: auto
+
 datasets:
   bacteria: bacteria_df.csv
   phages: phages_df.csv

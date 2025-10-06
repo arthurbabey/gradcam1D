@@ -9,7 +9,7 @@ dependencies:
   - torchvision=0.16
   - torchaudio=2.1
   - cpuonly
-  - captum=0.7
+  - captum
   - pandas=2.2
   - numpy=1.26
   - pyyaml=6.0
@@ -18,4 +18,3 @@ dependencies:
   - h5py=3.9
   - matplotlib=3.8
   - tqdm=4.66
-  - blast=2.14

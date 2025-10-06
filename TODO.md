@@ -6,13 +6,13 @@ Purpose
 - Each track lists goals, concrete tasks, and deliverables. Adapt as needed.
 
 Context Artifacts
-- Model: `model.py` (two-branch 1D CNN)
-- Data utils: `utils.py` (encoding, caching, dataset, attribution helpers)
-- Grad-CAM + BLAST CLI: `gradcam_to_blast.py`
-- BLAST→GenBank: `blast_to_genebank.py`
-- BLAST→BED + downloads: `blast_to_bedd.py`
-- Top-window selection: `visualisation.py`
-- Guided notebook: `pipeline_walkthrough.ipynb`
+- Model: `src/modeling.py` (two-branch 1D CNN, parity + Keras loader)
+- Data utils: `src/data.py` (encoding, caching, dataset, validation helpers) + `utils.py` re-exports for notebooks
+- Pipeline orchestration & CLI: `src/pipeline.py`, `cli.py`
+- Attribution helpers: `src/attribution.py`, `src/regions.py`
+- BLAST utilities: `src/blast_tools.py`
+- Reporting: `src/reporting.py`
+- Guided notebook: `notebooks/pipeline_walkthrough.ipynb`
 
 Track A — Engineering and Reproducibility
 - Goals

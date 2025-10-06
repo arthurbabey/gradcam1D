@@ -2,7 +2,7 @@ configfile: "config.yaml"
 
 import os
 
-CONFIG_PATH = workflow.configfile
+CONFIG_PATH = "config.yaml"
 RESULTS_DIR = config["paths"]["results_dir"]
 SAMPLES = [sample["name"] for sample in config["samples"]]
 

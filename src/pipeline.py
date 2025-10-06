@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List, Tuple
 
 import numpy as np
 import pandas as pd
+import torch
 
 from .attribution import (
     compute_attribution,
@@ -29,7 +30,7 @@ from .data import (
     write_fasta,
 )
 from .logging_utils import setup_logging
-from .modeling import build_model, predict_dataset, run_parity_check
+from .modeling import build_model, predict_dataset, run_parity_check, resolve_device
 from .regions import find_top_k_important_windows, save_regions_table
 from .reporting import write_report
 
@@ -66,6 +67,18 @@ def prepare_results_dirs(results_dir: Path) -> Dict[str, Path]:
     for path in subdirs.values():
         path.mkdir(parents=True, exist_ok=True)
     return subdirs
+
+
+def _get_device(config: PipelineConfig) -> torch.device:
+    hardware = config.raw.setdefault("hardware", {})
+    if "_resolved_device" in hardware:
+        return resolve_device(hardware["_resolved_device"])
+
+    preferred = hardware.get("device", "auto")
+    device = resolve_device(preferred)
+    hardware["_resolved_device"] = str(device)
+    logging.info("Using device: %s", device)
+    return device
 
 
 def _sequence_lengths(config: PipelineConfig) -> Dict[str, Dict[str, int]]:
@@ -116,9 +129,10 @@ def run_predictions(config: PipelineConfig) -> Path:
     subdirs = prepare_results_dirs(results_dir)
     setup_logging(subdirs["logs"], "predict", config.raw.get("logging", {}).get("level", "INFO"))
 
+    device = _get_device(config)
     dataset = load_dataset_with_cache(config)
-    model = build_model(Path(paths["model_checkpoint"]))
-    records = predict_dataset(model, dataset)
+    model = build_model(Path(paths["model_checkpoint"]), device=device)
+    records = predict_dataset(model, dataset, device=device)
     couples = dataset.couples
     for record in records:
         row = couples.iloc[int(record["dataset_index"])]
@@ -147,8 +161,9 @@ def compute_sample_attribution(config: PipelineConfig, sample_name: str) -> Tupl
     setup_logging(subdirs["logs"], f"explain_{sample_name}", config.raw.get("logging", {}).get("level", "INFO"))
 
     sample_cfg = _sample_lookup(config, sample_name)
+    device = _get_device(config)
     dataset = load_dataset_with_cache(config)
-    model = build_model(Path(paths["model_checkpoint"]))
+    model = build_model(Path(paths["model_checkpoint"]), device=device)
 
     sample_index = int(sample_cfg["idx"])
     bacterium_tensor, phage_tensor, label = prepare_sample(dataset, sample_index)
@@ -176,6 +191,7 @@ def compute_sample_attribution(config: PipelineConfig, sample_name: str) -> Tupl
         bacterium_tensor,
         phage_tensor,
         thresholds,
+        device,
     )
 
     row = dataset.couples.iloc[sample_index]
@@ -324,11 +340,12 @@ def parity_test(config: PipelineConfig) -> Path:
     subdirs = prepare_results_dirs(results_dir)
     setup_logging(subdirs["logs"], "parity", config.raw.get("logging", {}).get("level", "INFO"))
 
+    device = _get_device(config)
     dataset = load_dataset_with_cache(config)
-    model = build_model(Path(paths["model_checkpoint"]))
+    model = build_model(Path(paths["model_checkpoint"]), device=device)
     parity_cfg = config.raw.get("parity", {})
     indices = parity_cfg.get("sample_indices", [0])
     reference_path = subdirs["tests"] / parity_cfg.get("reference", "parity_reference.json")
-    run_parity_check(model, dataset, indices, reference_path)
+    run_parity_check(model, dataset, indices, reference_path, device=device)
     logging.info("Parity reference stored at %s", reference_path)
     return reference_path

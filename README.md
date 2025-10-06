@@ -14,18 +14,18 @@ Repository Layout
 - `src/` – modular implementation (data handling, model, attribution, pipeline orchestration).
 - `environment.yml` – Conda environment (PyTorch, Captum, Snakemake, BLAST+, Biopython, etc.).
 - `notebooks/pipeline_walkthrough.ipynb` – hands-on tour of a single example (mirrors CLI stages).
-- Legacy scripts (`gradcam_to_blast.py`, `blast_to_genebank.py`, `blast_to_bedd.py`) now wrap the shared modules for backward compatibility.
 
 Setup
 1. Create the environment: `conda env create -f environment.yml`
 2. Activate: `conda activate gradcam1d`
-3. Verify BLAST+: `blastn -version`
+3. Install BLAST+ separately if you plan to run local searches (e.g. `brew install blast` on macOS or `conda install -c bioconda blast=2.14` on x86_64). If BLAST+ is not available, set `blast.enabled: false` in `config.yaml` to skip the stage or rely on remote mode only.
 4. Adjust `config.yaml` if needed (paths, samples, attribution parameters, BLAST mode).
+5. Pick your accelerator via `hardware.device` (`auto`, `cpu`, `cuda`, `mps`) or override per run with `--device` on the CLI.
 
 Using the CLI
 ```
 # Step-by-step (functions can be run individually)
-python3 cli.py cache
+python3 cli.py cache --device mps
 python3 cli.py predict
 python3 cli.py explain --sample phage_0
 python3 cli.py regions --sample phage_0
@@ -35,8 +35,12 @@ python3 cli.py bed --sample phage_0
 python3 cli.py report
 python3 cli.py test
 
-# Or run everything for all samples listed in config.yaml
-python3 cli.py run
+# Or run everything for all samples listed in config.yaml (override device if desired)
+python3 cli.py run --device auto
+
+# You can also target an inline sample without editing config.yaml using the pattern
+# <branch>_<idx>, e.g. explain the phage branch at couples_df index 42:
+python3 cli.py explain --sample phage_42
 ```
 Outputs are written to `results_pipeline/` (deterministic naming per sample).
 
@@ -72,8 +76,7 @@ Validation & Logging
 
 Notebooks & Legacy Tools
 - Use `notebooks/pipeline_walkthrough.ipynb` to understand the pipeline on a single sample.
-- Older notebooks (`gradcam1D.ipynb`, `keras2torch.ipynb`, `predictions.ipynb`) remain for reference; prefer the new CLI or Snakemake for fresh runs.
-
+  
 Next Steps
 - See `TODO.md` for engineering, XAI, signal-processing, and biology-focused extensions.
 - Track contributions via `CONTRIBUTING.md` (coding style, tests, review flow).

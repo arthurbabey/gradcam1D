@@ -57,9 +57,12 @@ def compute_attribution(
     bacterium_tensor: torch.Tensor,
     phage_tensor: torch.Tensor,
     thresholds: Dict[str, int],
+    device: torch.device,
 ) -> np.ndarray:
     method = method.lower()
-    inputs = (bacterium_tensor.unsqueeze(0).requires_grad_(), phage_tensor.unsqueeze(0).requires_grad_())
+    bact_input = bacterium_tensor.to(device).unsqueeze(0).requires_grad_()
+    phage_input = phage_tensor.to(device).unsqueeze(0).requires_grad_()
+    inputs = (bact_input, phage_input)
 
     if method == "guided":
         from captum.attr import GuidedGradCam

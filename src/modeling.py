@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
+
+warnings.filterwarnings(
+    "ignore",
+    message="h5py is running against HDF5",
+    category=UserWarning,
+)
 
 import h5py
 import torch
 import torch.nn as nn
+import json
+
 from torch.utils.data import DataLoader
 
 
@@ -76,11 +85,34 @@ class PerphectInteractionModel(nn.Module):
         return torch.sigmoid(self.fc2(x))
 
 
-def build_model(checkpoint: Path, device: str = "cpu") -> nn.Module:
+def resolve_device(preferred: str | torch.device = "auto") -> torch.device:
+    if isinstance(preferred, torch.device):
+        return preferred
+    if preferred is None or str(preferred).lower() == "auto":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return torch.device("mps")
+        return torch.device("cpu")
+
+    key = str(preferred).lower()
+    if key == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA requested but not available")
+        return torch.device("cuda")
+    if key == "mps":
+        if not hasattr(torch.backends, "mps") or not torch.backends.mps.is_available():
+            raise RuntimeError("MPS requested but not available")
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def build_model(checkpoint: Path, device: str | torch.device = "cpu") -> nn.Module:
+    resolved_device = resolve_device(device)
     model = PerphectInteractionModel()
-    state_dict = torch.load(checkpoint, map_location=device)
+    state_dict = torch.load(checkpoint, map_location=resolved_device)
     model.load_state_dict(state_dict)
-    model.to(device)
+    model.to(resolved_device)
     model.eval()
     return model
 
@@ -89,13 +121,14 @@ def predict_dataset(
     model: nn.Module,
     dataset,
     batch_size: int = 1,
-    device: str = "cpu",
+    device: str | torch.device = "cpu",
 ) -> List[Dict[str, float]]:
+    resolved_device = resolve_device(device)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     results: List[Dict[str, float]] = []
     for batch_idx, (bact_x, phage_x, label) in enumerate(loader):
-        bact_x = bact_x.to(device)
-        phage_x = phage_x.to(device)
+        bact_x = bact_x.to(resolved_device)
+        phage_x = phage_x.to(resolved_device)
         with torch.no_grad():
             preds = model(bact_x, phage_x).cpu().numpy().flatten()
         for i, pred in enumerate(preds):
@@ -115,7 +148,9 @@ def run_parity_check(
     sample_indices: Sequence[int],
     reference_path: Path,
     tolerance: float = 1e-5,
+    device: str | torch.device = "cpu",
 ) -> Dict[str, float]:
+    resolved_device = resolve_device(device)
     reference: Dict[str, float] = {}
     if reference_path.exists():
         reference = json.loads(reference_path.read_text(encoding="utf-8"))
@@ -123,6 +158,8 @@ def run_parity_check(
     current: Dict[str, float] = {}
     for idx in sample_indices:
         bact_x, phage_x, _ = dataset[idx]
+        bact_x = bact_x.to(resolved_device)
+        phage_x = phage_x.to(resolved_device)
         with torch.no_grad():
             pred = model(bact_x.unsqueeze(0), phage_x.unsqueeze(0)).item()
         key = str(idx)
